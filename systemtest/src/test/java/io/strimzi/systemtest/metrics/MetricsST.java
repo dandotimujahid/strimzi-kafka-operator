@@ -732,7 +732,7 @@ public class MetricsST extends AbstractST {
                     .endEntityOperator()
                 .endSpec()
                 .build(),
-            KafkaTemplates.kafkaWithMetrics(kafkaClusterSecondName, namespaceSecond, 1, 1).build(),
+            KafkaTemplates.kafkaWithMetrics(kafkaClusterSecondName, namespaceSecond, 3, 3).build(),
             ScraperTemplates.scraperPod(clusterOperator.getDeploymentNamespace(), coScraperName).build(),
             ScraperTemplates.scraperPod(namespaceFirst, scraperName).build(),
             ScraperTemplates.scraperPod(namespaceSecond, secondScraperName).build()
