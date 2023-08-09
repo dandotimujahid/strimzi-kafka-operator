@@ -58,7 +58,7 @@ def runSystemTests(String workspace, String testCases, String testProfile, Strin
     def testcasesTag = testCases.isEmpty() ? "" : "-Dit.test=${testCases} "
     withMaven(mavenOpts: '-Djansi.force=true') {
         sh(script: "mvn -f ${workspace}/systemtest/pom.xml verify " +
-            "-P${testProfile} " +
+            "-Pacceptance " +
             "${groupsTag}" +
             "-DexcludedGroups=flaky,loadbalancer,networkpolicies " +
             "${testcasesTag}" +
