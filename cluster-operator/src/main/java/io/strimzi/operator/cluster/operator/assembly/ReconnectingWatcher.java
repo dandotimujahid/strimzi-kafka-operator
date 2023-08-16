@@ -2,16 +2,16 @@
  * Copyright Strimzi authors.
  * License: Apache License 2.0 (see the file LICENSE or http://apache.org/licenses/LICENSE-2.0.html).
  */
-package io.strimzi.operator.common;
+package io.strimzi.operator.cluster.operator.assembly;
 
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.LabelSelector;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.kubernetes.client.WatcherException;
+import io.strimzi.operator.common.ReconciliationLogger;
 import io.strimzi.operator.common.operator.resource.AbstractWatchableNamespacedResourceOperator;
 
-import java.util.Optional;
 import java.util.function.BiConsumer;
 
 /**
@@ -66,7 +66,7 @@ public class ReconnectingWatcher<T extends HasMetadata> implements Watcher<T> {
      * @return  The created watch
      */
     private Watch createWatch() {
-        return resourceOperator.watch(namespace, Optional.ofNullable(selector), this);
+        return resourceOperator.watch(namespace, selector, this);
     }
 
     /**
