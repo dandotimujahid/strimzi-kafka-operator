@@ -59,7 +59,7 @@ def runSystemTests(String workspace, String testCases, String testProfile, Strin
     withMaven(mavenOpts: '-Djansi.force=true') {
         sh(script: "mvn -f ${workspace}/systemtest/pom.xml verify " +
             "-P${testProfile} " +
-            "-Dgroups=mirrormaker " +
+            "-Dgroups=mirrormaker2 " +
             "-DexcludedGroups=${excludeGroups} " +
             "${testcasesTag}" +
             "-Djava.net.preferIPv4Stack=true " +
