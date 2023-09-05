@@ -59,7 +59,6 @@ def runSystemTests(String workspace, String testCases, String testProfile, Strin
     withMaven(mavenOpts: '-Djansi.force=true') {
         sh(script: "mvn -f ${workspace}/systemtest/pom.xml verify " +
             "-P${testProfile} " +
-            "${groupsTag}" +
             "-Dgroups=bridge,metrics,mirrormaker,mirrormaker2,oauth " +
             "-DexcludedGroups=loadbalancer,networkpolicies,flaky " +
             "${testcasesTag}" +
