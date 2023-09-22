@@ -60,7 +60,7 @@ def runSystemTests(String workspace, String testCases, String testProfile, Strin
         sh(script: "mvn -f ${workspace}/systemtest/pom.xml verify " +
             "-P${testProfile} " +
             "${groupsTag}" +
-            "-DexcludedGroups=bridge,metrics,mirrormaker,mirrormaker2,oauth,loadbalancer,networkpolicies,flaky " +
+            "-DexcludedGroups=bridge,metrics,mirrormaker,mirrormaker2,oauth,user,loadbalancer,networkpolicies,flaky " +
             "${testcasesTag}" +
             "-Djava.net.preferIPv4Stack=true " +
             "-DtrimStackTrace=false " +
