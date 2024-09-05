@@ -27,7 +27,7 @@ function install_helm3 {
 
 function install_helm_unittest {
     echo "Installing helm unittest plugin ..."
-    helm plugin install --version $TEST_HELM_UNITTEST_VERSION https://github.com/helm-unittest/helm-unittest.git
+    helm plugin install --version $TEST_HELM_UNITTEST_VERSION https://github.com/prabhav-thali/helm-unittest
 
     echo "Verifying the installation of helm unittest plugin ..."
     # run a proper helm command instead of, for example, "which helm", to verify that we can call the binary
