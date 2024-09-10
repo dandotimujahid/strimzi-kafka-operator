@@ -22,7 +22,7 @@ import io.strimzi.systemtest.utils.kafkaUtils.KafkaUserUtils;
 import io.strimzi.systemtest.utils.kafkaUtils.KafkaUtils;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.DeploymentUtils;
 import io.strimzi.systemtest.utils.kubeUtils.objects.PodUtils;
-import io.strimzi.test.TestUtils;
+import io.strimzi.test.ReadWriteUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterEach;
@@ -118,8 +118,8 @@ public class AbstractKRaftUpgradeST extends AbstractUpgradeST {
         DeploymentUtils.waitForDeploymentAndPodsReady(componentsNamespaceName, KafkaResources.entityOperatorDeploymentName(clusterName), 1);
     }
 
-    protected void changeKafkaAndMetadataVersion(final String componentsNamespaceName, CommonVersionModificationData versionModificationData) throws IOException {
-        changeKafkaAndMetadataVersion(componentsNamespaceName, versionModificationData, false);
+    protected void changeKafkaVersion(final String componentsNamespaceName, CommonVersionModificationData versionModificationData) throws IOException {
+        changeKafkaVersion(componentsNamespaceName, versionModificationData, false);
     }
 
     /**
@@ -131,7 +131,7 @@ public class AbstractKRaftUpgradeST extends AbstractUpgradeST {
      * @throws IOException exception during application of YAML files
      */
     @SuppressWarnings("CyclomaticComplexity")
-    protected void changeKafkaAndMetadataVersion(final String componentsNamespaceName, CommonVersionModificationData versionModificationData, boolean replaceEvenIfMissing) throws IOException {
+    protected void changeKafkaVersion(final String componentsNamespaceName, CommonVersionModificationData versionModificationData, boolean replaceEvenIfMissing) throws IOException {
         // Get Kafka version
         String kafkaVersionFromCR = cmdKubeClient(componentsNamespaceName).getResourceJsonPath(getResourceApiVersion(Kafka.RESOURCE_PLURAL), clusterName, ".spec.kafka.version");
         kafkaVersionFromCR = kafkaVersionFromCR.equals("") ? null : kafkaVersionFromCR;
@@ -218,7 +218,7 @@ public class AbstractKRaftUpgradeST extends AbstractUpgradeST {
 
         kafkaTopicYaml = new File(examplesPath + "/examples/topic/kafka-topic.yaml");
         LOGGER.info("Deploying KafkaTopic from: {}, in Namespace {}", kafkaTopicYaml.getPath(), namespaceName);
-        cmdKubeClient(namespaceName).applyContent(TestUtils.readFile(kafkaTopicYaml));
+        cmdKubeClient(namespaceName).applyContent(ReadWriteUtils.readFile(kafkaTopicYaml));
     }
 
     @BeforeEach
