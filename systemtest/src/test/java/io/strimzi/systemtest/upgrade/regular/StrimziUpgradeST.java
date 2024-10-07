@@ -6,10 +6,8 @@ package io.strimzi.systemtest.upgrade.regular;
 
 import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.systemtest.annotations.IsolatedTest;
-import io.strimzi.systemtest.annotations.KRaftNotSupported;
 import io.strimzi.systemtest.annotations.KindIPv6NotSupported;
 import io.strimzi.systemtest.annotations.MicroShiftNotSupported;
-import io.strimzi.systemtest.resources.NamespaceManager;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.storage.TestStorage;
 import io.strimzi.systemtest.upgrade.AbstractUpgradeST;
@@ -19,7 +17,6 @@ import io.strimzi.systemtest.upgrade.VersionModificationDataLoader;
 import io.strimzi.systemtest.upgrade.VersionModificationDataLoader.ModificationType;
 import io.strimzi.systemtest.utils.RollingUpdateUtils;
 import io.strimzi.systemtest.utils.StUtils;
-import io.strimzi.systemtest.utils.TestKafkaVersion;
 import io.strimzi.systemtest.utils.kafkaUtils.KafkaUtils;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.DeploymentUtils;
 import io.strimzi.systemtest.utils.kubeUtils.objects.PodUtils;
@@ -33,10 +30,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Optional;
 
 import static io.strimzi.systemtest.Environment.TEST_SUITE_NAMESPACE;
 import static io.strimzi.systemtest.TestConstants.CO_NAMESPACE;
-import static io.strimzi.systemtest.TestConstants.UPGRADE;
+import static io.strimzi.systemtest.TestTags.UPGRADE;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -47,22 +45,27 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * Kafka upgrade is done as part of those tests as well, but the tests for Kafka upgrade/downgrade are in {@link KafkaUpgradeDowngradeST}.
  */
 @Tag(UPGRADE)
-@KRaftNotSupported("Strimzi and Kafka upgrade is not supported with KRaft mode")
 public class StrimziUpgradeST extends AbstractUpgradeST {
 
     private static final Logger LOGGER = LogManager.getLogger(StrimziUpgradeST.class);
     private final BundleVersionModificationData acrossUpgradeData = new VersionModificationDataLoader(ModificationType.BUNDLE_UPGRADE).buildDataForUpgradeAcrossVersions();
 
-    @ParameterizedTest(name = "from: {0} (using FG <{2}>) to: {1} (using FG <{3}>) ")
+    @MicroShiftNotSupported("Due to lack of Kafka Connect build feature")
+    @KindIPv6NotSupported("Our current CI setup doesn't allow pushing into internal registries that is needed in this test")
+    @ParameterizedTest(name = "from: {0} (using FG <{2}>) to: {1} (using FG <{3}>)")
     @MethodSource("io.strimzi.systemtest.upgrade.VersionModificationDataLoader#loadYamlUpgradeData")
-    void testUpgradeStrimziVersion(String fromVersion, String toVersion, String fgBefore, String fgAfter, BundleVersionModificationData upgradeData) throws Exception {
+    void testUpgradeOfKafkaKafkaConnectAndKafkaConnector(String fromVersion, String toVersion, String fgBefore, String fgAfter, BundleVersionModificationData upgradeData) throws IOException {
         final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext());
+        UpgradeKafkaVersion upgradeKafkaVersion = new UpgradeKafkaVersion(upgradeData.getOldestKafka());
+        // setting log message version to null, similarly to the examples, which are not configuring LMFV
+        upgradeKafkaVersion.setLogMessageVersion(null);
+
         assumeTrue(StUtils.isAllowOnCurrentEnvironment(upgradeData.getEnvFlakyVariable()));
         assumeTrue(StUtils.isAllowedOnCurrentK8sVersion(upgradeData.getEnvMaxK8sVersion()));
 
         LOGGER.debug("Running upgrade test from version {} to {} (FG: {} -> {})",
-                fromVersion, toVersion, fgBefore, fgAfter);
-        performUpgrade(CO_NAMESPACE, testStorage, upgradeData);
+            fromVersion, toVersion, fgBefore, fgAfter);
+        doKafkaConnectAndKafkaConnectorUpgradeOrDowngradeProcedure(CO_NAMESPACE, testStorage, upgradeData, upgradeKafkaVersion);
     }
 
     @IsolatedTest
@@ -107,10 +110,11 @@ public class StrimziUpgradeST extends AbstractUpgradeST {
     @IsolatedTest
     void testUpgradeAcrossVersionsWithUnsupportedKafkaVersion() throws IOException {
         final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext());
-        UpgradeKafkaVersion upgradeKafkaVersion = UpgradeKafkaVersion.getKafkaWithVersionFromUrl(acrossUpgradeData.getFromKafkaVersionsUrl(), acrossUpgradeData.getStartingKafkaVersion());
+        Optional<UpgradeKafkaVersion> upgradeKafkaVersion = UpgradeKafkaVersion.getKafkaVersionSupportedBeforeUnsupportedAfterUpgrade(acrossUpgradeData.getFromKafkaVersionsUrl());
+        assumeTrue(upgradeKafkaVersion.isPresent(), "Supported Kafka versions after upgrade contains all supported Kafka versions before upgrade so test is skipped");
 
         // Setup env
-        setupEnvAndUpgradeClusterOperator(CO_NAMESPACE, testStorage, acrossUpgradeData, upgradeKafkaVersion);
+        setupEnvAndUpgradeClusterOperator(CO_NAMESPACE, testStorage, acrossUpgradeData, upgradeKafkaVersion.get());
 
         // Make snapshots of all Pods
         makeComponentsSnapshots(TEST_SUITE_NAMESPACE);
@@ -122,7 +126,7 @@ public class StrimziUpgradeST extends AbstractUpgradeST {
         changeClusterOperator(CO_NAMESPACE, TEST_SUITE_NAMESPACE, acrossUpgradeData);
         logPodImages(CO_NAMESPACE);
         //  Upgrade kafka
-        changeKafkaAndLogFormatVersion(TEST_SUITE_NAMESPACE, acrossUpgradeData);
+        changeKafkaVersion(TEST_SUITE_NAMESPACE, acrossUpgradeData);
         logPodImages(TEST_SUITE_NAMESPACE);
         checkAllComponentsImages(TEST_SUITE_NAMESPACE, acrossUpgradeData);
         // Verify that Pods are stable
@@ -150,7 +154,7 @@ public class StrimziUpgradeST extends AbstractUpgradeST {
         LOGGER.info("Rolling to new images has finished!");
         logPodImages(CO_NAMESPACE);
         //  Upgrade kafka
-        changeKafkaAndLogFormatVersion(testStorage.getNamespaceName(), acrossUpgradeData);
+        changeKafkaVersion(testStorage.getNamespaceName(), acrossUpgradeData);
         logPodImages(CO_NAMESPACE);
         checkAllComponentsImages(TEST_SUITE_NAMESPACE, acrossUpgradeData);
         // Verify that Pods are stable
@@ -159,57 +163,13 @@ public class StrimziUpgradeST extends AbstractUpgradeST {
         verifyProcedure(TEST_SUITE_NAMESPACE, acrossUpgradeData, testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), wasUTOUsedBefore);
     }
 
-    @MicroShiftNotSupported("Due to lack of Kafka Connect build feature")
-    @KindIPv6NotSupported("Our current CI setup doesn't allow pushing into internal registries that is needed in this test")
-    @IsolatedTest
-    void testUpgradeOfKafkaConnectAndKafkaConnector() throws IOException {
-        final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext());
-        final UpgradeKafkaVersion upgradeKafkaVersion = new UpgradeKafkaVersion(acrossUpgradeData.getDefaultKafka());
-
-        doKafkaConnectAndKafkaConnectorUpgradeOrDowngradeProcedure(CO_NAMESPACE, testStorage, acrossUpgradeData, upgradeKafkaVersion);
-    }
-
-    private void performUpgrade(String clusterOperatorNamespaceName, TestStorage testStorage, BundleVersionModificationData upgradeData) throws IOException {
-        // leave empty, so the original Kafka version from appropriate Strimzi's yaml will be used
-        UpgradeKafkaVersion upgradeKafkaVersion = new UpgradeKafkaVersion();
-
-        // Setup env
-        setupEnvAndUpgradeClusterOperator(clusterOperatorNamespaceName, testStorage, upgradeData, upgradeKafkaVersion);
-        logClusterOperatorPodImage(clusterOperatorNamespaceName);
-
-        // Check if UTO is used before changing the CO -> used for check for KafkaTopics
-        boolean wasUTOUsedBefore = StUtils.isUnidirectionalTopicOperatorUsed(testStorage.getNamespaceName(), eoSelector);
-
-        // Upgrade CO to HEAD
-        changeClusterOperator(clusterOperatorNamespaceName, testStorage.getNamespaceName(), upgradeData);
-
-        if (TestKafkaVersion.supportedVersionsContainsVersion(upgradeData.getDefaultKafkaVersionPerStrimzi())) {
-            waitForKafkaClusterRollingUpdate(testStorage.getNamespaceName());
-        }
-
-        logComponentsPodImagesWithConnect(testStorage.getNamespaceName());
-        // Upgrade kafka
-        changeKafkaAndLogFormatVersion(testStorage.getNamespaceName(), upgradeData);
-        logComponentsPodImagesWithConnect(testStorage.getNamespaceName());
-        checkAllComponentsImages(testStorage.getNamespaceName(), upgradeData);
-
-        // Verify that Pods are stable
-        PodUtils.verifyThatRunningPodsAreStable(testStorage.getNamespaceName(), clusterName);
-        // Verify upgrade
-        verifyProcedure(testStorage.getNamespaceName(), upgradeData, testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), wasUTOUsedBefore);
-    }
-
     @BeforeEach
     void setupEnvironment() {
-        NamespaceManager.getInstance().createNamespaceAndPrepare(CO_NAMESPACE);
-        NamespaceManager.getInstance().createNamespaceAndPrepare(TEST_SUITE_NAMESPACE);
+        setUpStrimziUpgradeTestNamespaces();
     }
 
     @AfterEach
     void afterEach() {
-        cleanUpKafkaTopics(TEST_SUITE_NAMESPACE);
-        deleteInstalledYamls(CO_NAMESPACE, TEST_SUITE_NAMESPACE, coDir);
-        NamespaceManager.getInstance().deleteNamespaceWithWait(CO_NAMESPACE);
-        NamespaceManager.getInstance().deleteNamespaceWithWait(TEST_SUITE_NAMESPACE);
+        cleanUpStrimziUpgradeTestNamespaces();
     }
 }

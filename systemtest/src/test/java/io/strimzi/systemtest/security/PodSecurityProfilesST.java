@@ -47,9 +47,7 @@ import org.junit.jupiter.api.Tag;
 import java.util.Collections;
 import java.util.List;
 
-import static io.strimzi.systemtest.TestConstants.ACCEPTANCE;
-import static io.strimzi.systemtest.TestConstants.POD_SECURITY_PROFILES_RESTRICTED;
-import static io.strimzi.systemtest.TestConstants.REGRESSION;
+import static io.strimzi.systemtest.TestTags.REGRESSION;
 import static io.strimzi.test.k8s.KubeClusterResource.kubeClient;
 import static org.hamcrest.MatcherAssert.assertThat;
 
@@ -63,7 +61,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
  * resources working and are stable with exchanging messages.
  */
 @Tag(REGRESSION)
-@Tag(POD_SECURITY_PROFILES_RESTRICTED)
 public class PodSecurityProfilesST extends AbstractST {
 
     private static final Logger LOGGER = LogManager.getLogger(PodSecurityProfilesST.class);
@@ -92,7 +89,6 @@ public class PodSecurityProfilesST extends AbstractST {
      * @usecase
      *  - security-profiles
      */
-    @Tag(ACCEPTANCE)
     @ParallelNamespaceTest
     @RequiredMinKubeOrOcpBasedKubeVersion(kubeVersion = 1.23, ocpBasedKubeVersion = 1.24)
     void testOperandsWithRestrictedSecurityProfile() {

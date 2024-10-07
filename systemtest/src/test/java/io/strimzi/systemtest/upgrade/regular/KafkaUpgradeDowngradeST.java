@@ -7,8 +7,9 @@ package io.strimzi.systemtest.upgrade.regular;
 import io.strimzi.api.kafka.Crds;
 import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
 import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.annotations.IsolatedTest;
-import io.strimzi.systemtest.annotations.KRaftNotSupported;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClients;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.crd.KafkaResource;
@@ -27,10 +28,13 @@ import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import static io.strimzi.systemtest.TestConstants.UPGRADE;
+import static io.strimzi.systemtest.Environment.TEST_SUITE_NAMESPACE;
+import static io.strimzi.systemtest.TestConstants.CO_NAMESPACE;
+import static io.strimzi.systemtest.TestTags.UPGRADE;
 import static io.strimzi.test.k8s.KubeClusterResource.cmdKubeClient;
 import static io.strimzi.test.k8s.KubeClusterResource.kubeClient;
 import static org.hamcrest.CoreMatchers.is;
@@ -42,7 +46,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * Metadata for upgrade/downgrade procedure are loaded from kafka-versions.yaml in root dir of this repository.
  */
 @Tag(UPGRADE)
-@KRaftNotSupported("Strimzi and Kafka downgrade is not supported with KRaft mode")
 public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
 
     private static final Logger LOGGER = LogManager.getLogger(KafkaUpgradeDowngradeST.class);
@@ -66,7 +69,7 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
         // ##############################
         // Validate that continuous clients finished successfully
         // ##############################
-        ClientUtils.waitForClientsSuccess(testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), testStorage.getNamespaceName(), continuousClientsMessageCount);
+        ClientUtils.waitForClientsSuccess(testStorage.getNamespaceName(), testStorage.getContinuousConsumerName(), testStorage.getContinuousProducerName(), continuousClientsMessageCount);
         // ##############################
     }
 
@@ -88,7 +91,7 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
         // ##############################
         // Validate that continuous clients finished successfully
         // ##############################
-        ClientUtils.waitForClientsSuccess(testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), testStorage.getNamespaceName(), continuousClientsMessageCount);
+        ClientUtils.waitForClientsSuccess(testStorage.getNamespaceName(), testStorage.getContinuousConsumerName(), testStorage.getContinuousProducerName(), continuousClientsMessageCount);
         // ##############################
     }
 
@@ -110,7 +113,7 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
         // ##############################
         // Validate that continuous clients finished successfully
         // ##############################
-        ClientUtils.waitForClientsSuccess(testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), testStorage.getNamespaceName(), continuousClientsMessageCount);
+        ClientUtils.waitForClientsSuccess(testStorage.getNamespaceName(), testStorage.getContinuousConsumerName(), testStorage.getContinuousProducerName(), continuousClientsMessageCount);
         // ##############################
     }
 
@@ -129,7 +132,7 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
         // ##############################
         // Validate that continuous clients finished successfully
         // ##############################
-        ClientUtils.waitForClientsSuccess(testStorage.getContinuousProducerName(), testStorage.getContinuousProducerName(), testStorage.getNamespaceName(), continuousClientsMessageCount);
+        ClientUtils.waitForClientsSuccess(testStorage.getNamespaceName(), testStorage.getContinuousProducerName(), testStorage.getContinuousProducerName(), continuousClientsMessageCount);
         // ##############################
     }
 
@@ -150,14 +153,22 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
         // ##############################
         // Validate that continuous clients finished successfully
         // ##############################
-        ClientUtils.waitForClientsSuccess(testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), testStorage.getNamespaceName(), continuousClientsMessageCount);
+        ClientUtils.waitForClientsSuccess(testStorage.getNamespaceName(), testStorage.getContinuousConsumerName(), testStorage.getContinuousProducerName(), continuousClientsMessageCount);
         // ##############################
     }
 
     @BeforeAll
     void setupEnvironment() {
-        clusterOperator.defaultInstallation().createInstallation().runInstallation();
+        clusterOperator
+            .defaultInstallation()
+                .withNamespace(CO_NAMESPACE)
+                .withWatchingNamespaces(TEST_SUITE_NAMESPACE)
+                // necessary as each isolated test removes TEST_SUITE_NAMESPACE and this suite handles creation of new one on its own.
+                .withBindingsNamespaces(Arrays.asList(TestConstants.CO_NAMESPACE, Environment.TEST_SUITE_NAMESPACE))
+            .createInstallation()
+            .runInstallation();
     }
+
 
     @SuppressWarnings({"checkstyle:MethodLength"})
     void runVersionChange(TestStorage testStorage, TestKafkaVersion initialVersion, TestKafkaVersion newVersion, String initLogMsgFormat, String initInterBrokerProtocol, int kafkaReplicas, int zkReplicas) {
@@ -168,7 +179,7 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
 
         if (KafkaResource.kafkaClient().inNamespace(testStorage.getNamespaceName()).withName(clusterName).get() == null) {
             LOGGER.info("Deploying initial Kafka version {} with logMessageFormat={} and interBrokerProtocol={}", initialVersion.version(), initLogMsgFormat, initInterBrokerProtocol);
-            KafkaBuilder kafka = KafkaTemplates.kafkaPersistent(testStorage.getNamespaceName(), clusterName, kafkaReplicas, zkReplicas)
+            KafkaBuilder kafka = KafkaTemplates.kafkaPersistentNodePools(testStorage.getNamespaceName(), clusterName, kafkaReplicas, zkReplicas)
                 .editSpec()
                     .editKafka()
                         .withVersion(initialVersion.version())
@@ -225,14 +236,14 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
                     && !ResourceManager.getTestContext().getDisplayName().contains("DowngradeToOlderMessageFormat")) {
 
                 // In case that init config was set, which means that CR was updated and CO won't do any changes
-                KafkaResource.replaceKafkaResourceInSpecificNamespace(clusterName, kafka -> {
+                KafkaResource.replaceKafkaResourceInSpecificNamespace(testStorage.getNamespaceName(), clusterName, kafka -> {
                     LOGGER.info("Kafka config before updating '{}'", kafka.getSpec().getKafka().getConfig().toString());
                     Map<String, Object> config = kafka.getSpec().getKafka().getConfig();
                     config.put("log.message.format.version", newVersion.messageVersion());
                     config.put("inter.broker.protocol.version", newVersion.protocolVersion());
                     kafka.getSpec().getKafka().setConfig(config);
                     LOGGER.info("Kafka config after updating '{}'", kafka.getSpec().getKafka().getConfig().toString());
-                }, testStorage.getNamespaceName());
+                });
 
                 RollingUpdateUtils.waitTillComponentHasRolled(testStorage.getNamespaceName(), brokerSelector, kafkaReplicas, brokerPods);
             }
@@ -253,9 +264,9 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
         LOGGER.info("Updating Kafka CR version field to " + newVersion.version());
 
         // Change the version in Kafka CR
-        KafkaResource.replaceKafkaResourceInSpecificNamespace(clusterName, kafka -> {
+        KafkaResource.replaceKafkaResourceInSpecificNamespace(testStorage.getNamespaceName(), clusterName, kafka -> {
             kafka.getSpec().getKafka().setVersion(newVersion.version());
-        }, testStorage.getNamespaceName());
+        });
 
         LOGGER.info("Waiting for readiness of new Kafka version (" + newVersion.version() + ") to complete");
 
@@ -309,14 +320,14 @@ public class KafkaUpgradeDowngradeST extends AbstractUpgradeST {
             LOGGER.info("Updating Kafka config attribute 'log.message.format.version' from '{}' to '{}' version", initialVersion.messageVersion(), newVersion.messageVersion());
             LOGGER.info("Updating Kafka config attribute 'inter.broker.protocol.version' from '{}' to '{}' version", initialVersion.protocolVersion(), newVersion.protocolVersion());
 
-            KafkaResource.replaceKafkaResourceInSpecificNamespace(clusterName, kafka -> {
+            KafkaResource.replaceKafkaResourceInSpecificNamespace(testStorage.getNamespaceName(), clusterName, kafka -> {
                 LOGGER.info("Kafka config before updating '{}'", kafka.getSpec().getKafka().getConfig().toString());
                 Map<String, Object> config = kafka.getSpec().getKafka().getConfig();
                 config.put("log.message.format.version", newVersion.messageVersion());
                 config.put("inter.broker.protocol.version", newVersion.protocolVersion());
                 kafka.getSpec().getKafka().setConfig(config);
                 LOGGER.info("Kafka config after updating '{}'", kafka.getSpec().getKafka().getConfig().toString());
-            }, testStorage.getNamespaceName());
+            });
 
             if (currentLogMessageFormat != null || currentInterBrokerProtocol != null) {
                 LOGGER.info("Change of configuration is done manually - rolling update");

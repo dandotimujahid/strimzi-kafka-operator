@@ -10,7 +10,6 @@ import io.strimzi.api.kafka.model.topic.KafkaTopic;
 import io.strimzi.api.kafka.model.topic.KafkaTopicBuilder;
 import io.strimzi.systemtest.Environment;
 import io.strimzi.systemtest.annotations.IsolatedTest;
-import io.strimzi.systemtest.annotations.KRaftNotSupported;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClients;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClientsBuilder;
 import io.strimzi.systemtest.resources.ResourceManager;
@@ -37,7 +36,7 @@ import java.util.Collections;
 import java.util.HashMap;
 
 import static io.strimzi.systemtest.TestConstants.CO_NAMESPACE;
-import static io.strimzi.systemtest.TestConstants.OLM_UPGRADE;
+import static io.strimzi.systemtest.TestTags.OLM_UPGRADE;
 import static io.strimzi.test.k8s.KubeClusterResource.kubeClient;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -49,11 +48,11 @@ import static org.hamcrest.MatcherAssert.assertThat;
  * Tests in this class use OLM for install cluster operator.
  */
 @Tag(OLM_UPGRADE)
-@KRaftNotSupported("Strimzi and Kafka downgrade is not supported with KRaft mode")
 public class OlmUpgradeST extends AbstractUpgradeST {
 
     private static final Logger LOGGER = LogManager.getLogger(OlmUpgradeST.class);
     private final OlmVersionModificationData olmUpgradeData = new VersionModificationDataLoader(ModificationType.OLM_UPGRADE).getOlmUpgradeData();
+
     @IsolatedTest
     void testStrimziUpgrade() throws IOException {
         final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext(), CO_NAMESPACE);
@@ -141,12 +140,12 @@ public class OlmUpgradeST extends AbstractUpgradeST {
 
         // ======== Kafka upgrade starts ========
         logComponentsPodImages(CO_NAMESPACE);
-        changeKafkaAndLogFormatVersion(CO_NAMESPACE, olmUpgradeData);
+        changeKafkaVersion(CO_NAMESPACE, olmUpgradeData);
         logComponentsPodImages(CO_NAMESPACE);
         // ======== Kafka upgrade ends ========
 
         // Wait for messages of previously created clients
-        ClientUtils.waitForClientsSuccess(testStorage.getProducerName(), testStorage.getConsumerName(), CO_NAMESPACE, testStorage.getMessageCount());
+        ClientUtils.waitForClientsSuccess(CO_NAMESPACE, testStorage.getConsumerName(), testStorage.getProducerName(), testStorage.getMessageCount());
     }
 
     @BeforeAll
