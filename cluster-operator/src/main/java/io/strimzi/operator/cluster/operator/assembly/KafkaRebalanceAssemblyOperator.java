@@ -68,6 +68,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static io.strimzi.api.ResourceAnnotations.ANNO_STRIMZI_IO_REBALANCE_TEMPLATE;
 import static io.strimzi.operator.cluster.operator.resource.cruisecontrol.CruiseControlApiImpl.HTTP_DEFAULT_IDLE_TIMEOUT_SECONDS;
 import static io.strimzi.operator.common.Annotations.ANNO_STRIMZI_IO_REBALANCE;
 import static io.strimzi.operator.common.Annotations.ANNO_STRIMZI_IO_REBALANCE_AUTOAPPROVAL;
@@ -145,13 +146,13 @@ public class KafkaRebalanceAssemblyOperator
 
     private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(KafkaRebalanceAssemblyOperator.class.getName());
 
-    protected static final String BROKER_LOAD_KEY = "brokerLoad.json";
+    /* test */ static final String BROKER_LOAD_KEY = "brokerLoad.json";
     private final CrdOperator<KubernetesClient, KafkaRebalance, KafkaRebalanceList> kafkaRebalanceOperator;
     private final CrdOperator<KubernetesClient, Kafka, KafkaList> kafkaOperator;
     private final SecretOperator secretOperations;
     private final LabelSelector kafkaSelector;
     private final ConfigMapOperator configMapOperator;
-    private int cruiseControlPort;
+    private final int cruiseControlPort;
 
     /**
      * @param vertx The Vertx instance
@@ -419,8 +420,7 @@ public class KafkaRebalanceAssemblyOperator
     }
 
     private KafkaRebalanceStatus buildRebalanceStatusFromPreviousStatus(KafkaRebalanceStatus currentStatus, Set<Condition> validation) {
-        List<Condition> conditions = new ArrayList<>();
-        conditions.addAll(validation);
+        List<Condition> conditions = new ArrayList<>(validation);
         Condition currentState = KafkaRebalanceUtils.rebalanceStateCondition(currentStatus);
         conditions.add(currentState);
         return new KafkaRebalanceStatusBuilder()
@@ -996,8 +996,8 @@ public class KafkaRebalanceAssemblyOperator
             return Future.succeededFuture();
         }
 
-        KafkaRebalanceAnnotation rebalanceAnnotation = rebalanceAnnotation(kafkaRebalance);
-        if (rebalanceAnnotation == KafkaRebalanceAnnotation.template) {
+        boolean isTemplate = Annotations.booleanAnnotation(kafkaRebalance, ANNO_STRIMZI_IO_REBALANCE_TEMPLATE, false);
+        if (isTemplate) {
             LOGGER.traceCr(reconciliation, "KafkaRebalance {} is a template configuration. Skipping it.", kafkaRebalance.getMetadata().getName());
             return Future.succeededFuture();
         }
