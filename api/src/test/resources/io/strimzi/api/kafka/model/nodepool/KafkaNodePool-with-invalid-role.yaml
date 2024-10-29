@@ -6,7 +6,7 @@ metadata:
     strimzi.io/cluster: my-cluster
 spec:
   roles:
-    - helper
+    - controller
   replicas: 3
   resources:
     requests:
