@@ -41,6 +41,7 @@ public class KafkaNodePoolCrdIT extends AbstractCrdIT {
                 () -> createDeleteCustomResource("KafkaNodePool-with-invalid-role.yaml"));
 
         assertThat(exception.getMessage(), containsStringIgnoringCase("spec.roles[0]: Unsupported value: \"helper\": supported values: \"controller\", \"broker\""));
+        System.out.println(spec.roles[0]);
     }
 
     @BeforeAll
