@@ -45,7 +45,6 @@ public class KafkaNodePoolCrdIT extends AbstractCrdIT {
                 containsStringIgnoringCase("spec.roles: Unsupported value: \"helper\": supported values: \"controller\", \"broker\""),
                 containsStringIgnoringCase("spec.roles[0]: Unsupported value: \"helper\": supported values: \"controller\", \"broker\"")));
     }
-    }
 
     @BeforeAll
     void setupEnvironment() {
