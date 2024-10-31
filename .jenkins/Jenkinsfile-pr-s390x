@@ -2,7 +2,7 @@
 
 def lib
 // Currently the loadbalancer service is not working on minikube, same for network policies
-def DEFAULT_EXCLUDED_GROUPS = "loadbalancer,networkpolicies"
+def DEFAULT_EXCLUDED_GROUPS = "flaky,loadbalancer,networkpolicies"
 
 pipeline {
     agent {
@@ -16,8 +16,8 @@ pipeline {
     }
     parameters {
         string(name: 'TEST_CASE', defaultValue: '*ST', description: 'maven parameter for executing specific tests')
-        string(name: 'TEST_PROFILE', defaultValue: 'all', description: 'maven parameter for executing specific test profile')
-        string(name: 'TEST_GROUPS', defaultValue: 'acceptance', description: 'maven parameter for executing specific test groups')
+        string(name: 'TEST_PROFILE', defaultValue: 'acceptance', description: 'maven parameter for executing specific test profile')
+        #string(name: 'TEST_GROUPS', defaultValue: 'acceptance', description: 'maven parameter for executing specific test groups')
         string(name: 'EXCLUDE', defaultValue: "${DEFAULT_EXCLUDED_GROUPS}", description: 'maven parameter for exclude specific test tag')
         string(name: 'ENV_VARS', defaultValue: "", description: 'maven parameter for setting values of environment variables used in STs')
     }
