@@ -2,6 +2,8 @@
 
 ## 0.45.0
 
+* Add support for Kafka 3.8.1
+* Ability to move data between JBOD disks using Cruise Control.
 
 ## 0.44.0
 
