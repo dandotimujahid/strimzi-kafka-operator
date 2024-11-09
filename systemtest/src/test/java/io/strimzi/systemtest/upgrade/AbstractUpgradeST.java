@@ -220,11 +220,16 @@ public class AbstractUpgradeST extends AbstractST {
     protected void changeKafkaVersionInKafkaConnect(String componentsNamespaceName, CommonVersionModificationData versionModificationData) {
         UpgradeKafkaVersion upgradeToKafkaVersion = new UpgradeKafkaVersion(versionModificationData.getProcedures().getVersion());
 
-        LOGGER.info(String.format("Setting Kafka version to %s in Kafka Connect", upgradeToKafkaVersion.getVersion()));
-        cmdKubeClient(componentsNamespaceName).patchResource(getResourceApiVersion(KafkaConnect.RESOURCE_PLURAL), clusterName, "/spec/version", upgradeToKafkaVersion.getVersion());
+        String kafkaVersionFromConnectCR = cmdKubeClient(componentsNamespaceName).getResourceJsonPath(getResourceApiVersion(KafkaConnect.RESOURCE_PLURAL), clusterName, ".spec.version");
+        kafkaVersionFromConnectCR = kafkaVersionFromConnectCR.isEmpty() ? null : kafkaVersionFromConnectCR;
 
-        LOGGER.info("Waiting for KafkaConnect rolling update to finish");
-        connectPods = RollingUpdateUtils.waitTillComponentHasRolled(componentsNamespaceName, connectLabelSelector, 1, connectPods);
+        if (kafkaVersionFromConnectCR != null && !kafkaVersionFromConnectCR.equals(upgradeToKafkaVersion.getVersion())) {
+            LOGGER.info(String.format("Setting Kafka version to %s in Kafka Connect", upgradeToKafkaVersion.getVersion()));
+            cmdKubeClient(componentsNamespaceName).patchResource(getResourceApiVersion(KafkaConnect.RESOURCE_PLURAL), clusterName, "/spec/version", upgradeToKafkaVersion.getVersion());
+
+            LOGGER.info("Waiting for KafkaConnect rolling update to finish");
+            connectPods = RollingUpdateUtils.waitTillComponentHasRolled(componentsNamespaceName, connectLabelSelector, 1, connectPods);
+        }
     }
 
     protected void logComponentsPodImagesWithConnect(String componentsNamespaceName) {
@@ -239,6 +244,13 @@ public class AbstractUpgradeST extends AbstractST {
         logPodImages(clusterOperatorNamespaceName, coSelector);
     }
 
+    /**
+     * Logs images of Pods' containers in the specified {@param namespaceName}. Each image is logged per each label selector.
+     *
+     * @param namespaceName the name of the Kubernetes namespace where the pods are located
+     * @param labelSelectors optional array of {@link LabelSelector} objects used to filter pods based on labels.
+     *                       If no selectors are provided, no Pods are selected.
+     */
     protected void logPodImages(String namespaceName, LabelSelector... labelSelectors) {
         Arrays.stream(labelSelectors)
             .parallel()
