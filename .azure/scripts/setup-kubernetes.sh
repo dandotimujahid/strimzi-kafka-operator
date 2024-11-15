@@ -22,9 +22,10 @@ if [ -z "$ARCH" ]; then
 fi
 
 function install_kubectl {
-    if [ "${TEST_KUBECTL_VERSION:-1.25.0}" = "latest" ]; then
-        TEST_KUBECTL_VERSION=$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)
-    fi
+    #if [ "${TEST_KUBECTL_VERSION:-v1.25.0}" = "latest" ]; then
+        #TEST_KUBECTL_VERSION=$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)
+	TEST_KUBECTL_VERSION=v1.25.0
+    #fi
     curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/${TEST_KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl && chmod +x kubectl
     sudo cp kubectl /usr/local/bin
 }
