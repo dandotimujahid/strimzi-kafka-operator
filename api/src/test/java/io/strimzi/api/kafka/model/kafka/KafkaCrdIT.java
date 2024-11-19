@@ -61,6 +61,7 @@ public class KafkaCrdIT extends AbstractCrdIT {
         Throwable exception = assertThrows(
                 KubernetesClientException.class,
                 () -> createDeleteCustomResource("Kafka-with-null-maintenance.yaml"));
+        System.out.println("printing this message to find out the error");
         System.out.println(exception.getMessage());
         assertThat(exception.getMessage(), containsStringIgnoringCase("invalid: spec.maintenanceTimeWindows[0]: Invalid value: \"null\": spec.maintenanceTimeWindows[0] in body must be of type string: \"null\""));
     }
