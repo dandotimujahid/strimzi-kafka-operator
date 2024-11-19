@@ -44,7 +44,7 @@ if [ "$TEST_CLUSTER" = "minikube" ]; then
     #if [ "${TEST_MINIKUBE_VERSION:-latest}" = "latest" ]; then
         #TEST_MINIKUBE_URL=https://storage.googleapis.com/minikube/releases/latest/minikube-linux-${ARCH}
     #else
-    	TEST_MINIKUBE_VERSION=v1.27.3
+    	TEST_MINIKUBE_VERSION=v1.25.0
         TEST_MINIKUBE_URL=https://github.com/kubernetes/minikube/releases/download/${TEST_MINIKUBE_VERSION}/minikube-linux-${ARCH}
     #fi
 
