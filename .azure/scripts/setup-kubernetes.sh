@@ -24,7 +24,7 @@ fi
 function install_kubectl {
     #if [ "${TEST_KUBECTL_VERSION:-v1.25.0}" = "latest" ]; then
         #TEST_KUBECTL_VERSION=$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)
-	TEST_KUBECTL_VERSION=v1.25.0
+	TEST_KUBECTL_VERSION=v1.31.0
     #fi
     curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/${TEST_KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl && chmod +x kubectl
     sudo cp kubectl /usr/local/bin
@@ -44,7 +44,7 @@ if [ "$TEST_CLUSTER" = "minikube" ]; then
     #if [ "${TEST_MINIKUBE_VERSION:-latest}" = "latest" ]; then
         #TEST_MINIKUBE_URL=https://storage.googleapis.com/minikube/releases/latest/minikube-linux-${ARCH}
     #else
-    	TEST_MINIKUBE_VERSION=v1.25.0
+    	TEST_MINIKUBE_VERSION=v1.31.0
         TEST_MINIKUBE_URL=https://github.com/kubernetes/minikube/releases/download/${TEST_MINIKUBE_VERSION}/minikube-linux-${ARCH}
     #fi
 
