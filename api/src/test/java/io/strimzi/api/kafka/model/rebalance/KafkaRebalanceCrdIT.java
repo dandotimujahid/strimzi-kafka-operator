@@ -82,9 +82,7 @@ public class KafkaRebalanceCrdIT extends AbstractCrdIT {
 
         assertThat(exception.getMessage(), anyOf(
                         containsStringIgnoringCase("spec.moveReplicasOffVolumes.volumeIds: Invalid value: 0: spec.moveReplicasOffVolumes.volumeIds in body should have at least 1 items."),
-                        containsStringIgnoringCase("spec.moveReplicasOffVolumes[0].volumeIds: Invalid value: 0: spec.moveReplicasOffVolumes[0].volumeIds in body should have at least 1 items."),
-                        containsStringIgnoringCase("unknown object type \"nil\" in Kafka.spec.moveReplicasOffVolumes[0]")
-                ));
+                        containsStringIgnoringCase("spec.moveReplicasOffVolumes[0].volumeIds: Invalid value: 0: spec.moveReplicasOffVolumes[0].volumeIds in body should have at least 1 items.")));
     }
 
     @Test
