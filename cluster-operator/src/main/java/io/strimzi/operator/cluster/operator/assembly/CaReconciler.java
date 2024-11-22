@@ -45,7 +45,6 @@ import io.strimzi.operator.common.auth.PemTrustSet;
 import io.strimzi.operator.common.auth.TlsPemIdentity;
 import io.strimzi.operator.common.model.Ca;
 import io.strimzi.operator.common.model.ClientsCa;
-import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
@@ -207,7 +206,7 @@ public class CaReconciler {
         return reconcileCas(clock)
                 .compose(i -> verifyClusterCaFullyTrustedAndUsed())
                 .compose(i -> reconcileClusterOperatorSecret(clock))
-                .compose(i -> rollingUpdateForNewCaKey())
+                .compose(i -> maybeRollingUpdateForNewClusterCaKey())
                 .compose(i -> maybeRemoveOldClusterCaCertificates())
                 .map(i -> new CaReconciliationResult(clusterCa, clientsCa));
     }
@@ -258,23 +257,17 @@ public class CaReconciler {
                         }
                     }
 
-                    // When we are not supposed to generate the CA, but it does not exist, we should just throw an error
-                    checkCustomCaSecret(clusterCaConfig, clusterCaCertSecret, clusterCaKeySecret, "Cluster CA");
-
                     clusterCa = new ClusterCa(reconciliation, certManager, passwordGenerator, reconciliation.name(), clusterCaCertSecret,
                             clusterCaKeySecret,
                             ModelUtils.getCertificateValidity(clusterCaConfig),
                             ModelUtils.getRenewalDays(clusterCaConfig),
                             clusterCaConfig == null || clusterCaConfig.isGenerateCertificateAuthority(), clusterCaConfig != null ? clusterCaConfig.getCertificateExpirationPolicy() : null);
                     clusterCa.createRenewOrReplace(
-                            reconciliation.namespace(), reconciliation.name(), caLabels,
+                            reconciliation.namespace(), caLabels,
                             clusterCaCertLabels, clusterCaCertAnnotations,
                             clusterCaConfig != null && !clusterCaConfig.isGenerateSecretOwnerReference() ? null : ownerRef,
                             clusterCaSecrets,
                             Util.isMaintenanceTimeWindowsSatisfied(reconciliation, maintenanceWindows, clock.instant()));
-
-                    // When we are not supposed to generate the CA, but it does not exist, we should just throw an error
-                    checkCustomCaSecret(clientsCaConfig, clientsCaCertSecret, clientsCaKeySecret, "Clients CA");
 
                     clientsCa = new ClientsCa(reconciliation, certManager,
                             passwordGenerator, clientsCaCertName,
@@ -284,7 +277,7 @@ public class CaReconciler {
                             ModelUtils.getRenewalDays(clientsCaConfig),
                             clientsCaConfig == null || clientsCaConfig.isGenerateCertificateAuthority(),
                             clientsCaConfig != null ? clientsCaConfig.getCertificateExpirationPolicy() : null);
-                    clientsCa.createRenewOrReplace(reconciliation.namespace(), reconciliation.name(),
+                    clientsCa.createRenewOrReplace(reconciliation.namespace(),
                             caLabels, Map.of(), Map.of(),
                             clientsCaConfig != null && !clientsCaConfig.isGenerateSecretOwnerReference() ? null : ownerRef,
                             clientsCaSecrets,
@@ -319,22 +312,6 @@ public class CaReconciler {
 
                     return caUpdatePromise.future();
                 });
-    }
-
-    /**
-     * Utility method for checking the Secret existence when custom CA is used. The custom CA is configured but the
-     * secrets do not exist, it will throw InvalidConfigurationException.
-     *
-     * @param ca            The CA Configuration from the Custom Resource
-     * @param certSecret    Secret with the certificate public key
-     * @param keySecret     Secret with the certificate private key
-     * @param caDescription The name of the CA for which this check is executed ("Cluster CA" or "Clients CA" - used
-     *                      in the exception message)
-     */
-    private void checkCustomCaSecret(CertificateAuthority ca, Secret certSecret, Secret keySecret, String caDescription)   {
-        if (ca != null && !ca.isGenerateCertificateAuthority() && (certSecret == null || keySecret == null))   {
-            throw new InvalidResourceException(caDescription + " should not be generated, but the secrets were not found.");
-        }
     }
 
     /**
@@ -374,39 +351,35 @@ public class CaReconciler {
     }
 
     /**
-     * Perform a rolling update of the cluster so that CA certificates get added to their truststores, or expired CA
-     * certificates get removed from their truststores. Note this is only necessary when the CA certificate has changed
-     * due to a new CA key. It is not necessary when the CA certificate is replace while retaining the existing key.
+     * Maybe perform a rolling update of the cluster to update the CA certificates in component truststores.
+     * This is only necessary when the Cluster CA certificate has changed due to a new CA key.
+     * It is not necessary when the CA certificate is renewed while retaining the existing key.
+     *
+     * If Strimzi did not replace the CA key during the current reconciliation, {@code isClusterCaNeedFullTrust} is used to:
+     *      * continue from a previous CA key replacement which didn't end successfully (i.e. CO stopped)
+     *      * track key replacements when the user is managing the CA
+     *
+     * @return Future which completes when this step is done, either by rolling the cluster or by deciding
+     *         that no rolling is needed.
      */
-    Future<Void> rollingUpdateForNewCaKey() {
-        RestartReasons podRollReasons = RestartReasons.empty();
-
-        // cluster CA needs to be fully trusted
-        // it is coming from a cluster CA key replacement which didn't end successfully (i.e. CO stopped) and we need to continue from there
+    Future<Void> maybeRollingUpdateForNewClusterCaKey() {
         if (clusterCa.keyReplaced() || isClusterCaNeedFullTrust) {
-            podRollReasons.add(RestartReason.CLUSTER_CA_CERT_KEY_REPLACED);
-        }
-
-        if (clientsCa.keyReplaced()) {
-            podRollReasons.add(RestartReason.CLIENT_CA_CERT_KEY_REPLACED);
-        }
-
-        if (podRollReasons.shouldRestart()) {
+            RestartReason restartReason = RestartReason.CLUSTER_CA_CERT_KEY_REPLACED;
             TlsPemIdentity coTlsPemIdentity = new TlsPemIdentity(new PemTrustSet(clusterCa.caCertSecret()), PemAuthIdentity.clusterOperator(coSecret));
             return getZooKeeperReplicas()
-                    .compose(replicas -> maybeRollZookeeper(replicas, podRollReasons, coTlsPemIdentity))
+                    .compose(replicas -> rollZookeeper(replicas, restartReason, coTlsPemIdentity))
                     .compose(i -> getKafkaReplicas())
-                    .compose(nodes -> rollKafkaBrokers(nodes, podRollReasons, coTlsPemIdentity))
-                    .compose(i -> maybeRollDeploymentIfExists(KafkaResources.entityOperatorDeploymentName(reconciliation.name()), podRollReasons))
-                    .compose(i -> maybeRollDeploymentIfExists(KafkaExporterResources.componentName(reconciliation.name()), podRollReasons))
-                    .compose(i -> maybeRollDeploymentIfExists(CruiseControlResources.componentName(reconciliation.name()), podRollReasons));
+                    .compose(nodes -> rollKafkaBrokers(nodes, RestartReasons.of(restartReason), coTlsPemIdentity))
+                    .compose(i -> rollDeploymentIfExists(KafkaResources.entityOperatorDeploymentName(reconciliation.name()), restartReason))
+                    .compose(i -> rollDeploymentIfExists(KafkaExporterResources.componentName(reconciliation.name()), restartReason))
+                    .compose(i -> rollDeploymentIfExists(CruiseControlResources.componentName(reconciliation.name()), restartReason));
         } else {
             return Future.succeededFuture();
         }
     }
 
     /**
-     * Gather the Kafka related components pods for checking CA key trust and CA certificate usage to sign servers certificate.
+     * Gather the Kafka related components pods for checking Cluster CA key trust and Cluster CA certificate usage to sign servers certificate.
      *
      * Verify that all the pods are already trusting the new CA certificate signed by a new CA key.
      * It checks each pod's CA key generation, compared with the new CA key generation.
@@ -498,33 +471,27 @@ public class CaReconciler {
     }
 
     /**
-     * Checks whether the ZooKeeper cluster needs ot be rolled to trust the new CA private key. ZooKeeper uses only the
-     * Cluster CA and not the Clients CA. So the rolling happens only when Cluster CA private key changed.
+     * Rolls the ZooKeeper cluster to trust the new Cluster CA private key.
      *
      * @param replicas              Current number of ZooKeeper replicas
-     * @param podRestartReasons     List of reasons to restart the pods
+     * @param podRestartReason      Reason to restart the pods
      * @param coTlsPemIdentity      Trust set and identity for TLS client authentication for connecting to ZooKeeper
      *
-     * @return  Future which completes when this step is done either by rolling the ZooKeeper cluster or by deciding
-     *          that no rolling is needed.
+     * @return  Future which completes when the ZooKeeper cluster has been rolled.
      */
-    /* test */ Future<Void> maybeRollZookeeper(int replicas, RestartReasons podRestartReasons, TlsPemIdentity coTlsPemIdentity) {
-        if (podRestartReasons.contains(RestartReason.CLUSTER_CA_CERT_KEY_REPLACED)) {
-            Labels zkSelectorLabels = Labels.EMPTY
-                    .withStrimziKind(reconciliation.kind())
-                    .withStrimziCluster(reconciliation.name())
-                    .withStrimziName(KafkaResources.zookeeperComponentName(reconciliation.name()));
+    /* test */ Future<Void> rollZookeeper(int replicas, RestartReason podRestartReason, TlsPemIdentity coTlsPemIdentity) {
+        Labels zkSelectorLabels = Labels.EMPTY
+                .withStrimziKind(reconciliation.kind())
+                .withStrimziCluster(reconciliation.name())
+                .withStrimziName(KafkaResources.zookeeperComponentName(reconciliation.name()));
 
-            Function<Pod, List<String>> rollZkPodAndLogReason = pod -> {
-                List<String> reason = List.of(RestartReason.CLUSTER_CA_CERT_KEY_REPLACED.getDefaultNote());
-                LOGGER.debugCr(reconciliation, "Rolling Pod {} to {}", pod.getMetadata().getName(), reason);
-                return reason;
-            };
-            return new ZooKeeperRoller(podOperator, zookeeperLeaderFinder, operationTimeoutMs)
-                    .maybeRollingUpdate(reconciliation, replicas, zkSelectorLabels, rollZkPodAndLogReason, coTlsPemIdentity);
-        } else {
-            return Future.succeededFuture();
-        }
+        Function<Pod, List<String>> rollZkPodAndLogReason = pod -> {
+            List<String> reason = List.of(podRestartReason.getDefaultNote());
+            LOGGER.debugCr(reconciliation, "Rolling Pod {} to {}", pod.getMetadata().getName(), reason);
+            return reason;
+        };
+        return new ZooKeeperRoller(podOperator, zookeeperLeaderFinder, operationTimeoutMs)
+                .maybeRollingUpdate(reconciliation, replicas, zkSelectorLabels, rollZkPodAndLogReason, coTlsPemIdentity);
     }
 
     /* test */ Future<Set<NodeRef>> getKafkaReplicas() {
@@ -572,28 +539,19 @@ public class CaReconciler {
                 eventPublisher);
     }
 
-    // Entity Operator, Kafka Exporter, and Cruise Control are only rolled when the cluster CA cert key is replaced
-    private Future<Void> maybeRollDeploymentIfExists(String deploymentName, RestartReasons podRollReasons) {
-        if (podRollReasons.contains(RestartReason.CLUSTER_CA_CERT_KEY_REPLACED)) {
-            return rollDeploymentIfExists(deploymentName, RestartReason.CLUSTER_CA_CERT_KEY_REPLACED.getDefaultNote());
-        } else {
-            return Future.succeededFuture();
-        }
-    }
-
     /**
      * Rolls deployments when they exist. This method is used by the CA renewal to roll deployments.
      *
      * @param deploymentName    Name of the deployment which should be rolled if it exists
-     * @param reason           Reason for which it is being rolled
+     * @param reason            Reason for which it is being rolled
      *
      * @return  Succeeded future if it succeeded, failed otherwise.
      */
-    /* test */ Future<Void> rollDeploymentIfExists(String deploymentName, String reason)  {
+    /* test */ Future<Void> rollDeploymentIfExists(String deploymentName, RestartReason reason)  {
         return deploymentOperator.getAsync(reconciliation.namespace(), deploymentName)
                 .compose(dep -> {
                     if (dep != null) {
-                        LOGGER.infoCr(reconciliation, "Rolling Deployment {} due to {}", deploymentName, reason);
+                        LOGGER.infoCr(reconciliation, "Rolling Deployment {} due to {}", deploymentName, reason.getDefaultNote());
                         return deploymentOperator.singlePodDeploymentRollingUpdate(reconciliation, reconciliation.namespace(), deploymentName, operationTimeoutMs);
                     } else {
                         return Future.succeededFuture();
