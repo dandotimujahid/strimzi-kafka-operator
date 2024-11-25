@@ -36,7 +36,7 @@ pipeline {
         TEST_HELM3_VERSION = "v3.4.2"
         TEST_CLUSTER = "minikube"
         TEST_KUBECTL_VERSION = "v1.25.0"
-        TEST_MINIKUBE_VERSION = "v1.31.0"
+        TEST_MINIKUBE_VERSION = "v1.21.0"
         COPY_DOCKER_LOGIN = "true"
         DOCKER_BUILDX = "buildx"
         DOCKER_BUILD_ARGS = "--platform linux/s390x --load"
