@@ -97,7 +97,7 @@ if [ "$TEST_CLUSTER" = "minikube" ]; then
         minikube addons enable registry --images="Registry=${ARCH}/registry:2.8.0-beta.1,KubeRegistryProxy=google_containers/kube-registry-proxy:0.4-${ARCH}"
         rm -rf kubernetes
 	elif [[ "$ARCH" = "s390x" ]]; then
-        minikube addons enable registry --images="Registry=KubeRegistryProxy=gcr.io/k8s-minikube/kube-registry-proxy:0.0.9"
+        minikube addons enable registry --images="Registry=${MINIKUBE_REGISTRY_IMAGE},KubeRegistryProxy=gcr.io/k8s-minikube/kube-registry-proxy:0.0.9"
     else
         minikube addons enable registry --images="Registry=${MINIKUBE_REGISTRY_IMAGE}"
     fi
