@@ -90,8 +90,8 @@ if [ "$TEST_CLUSTER" = "minikube" ]; then
     fi
 
     if [ "$ARCH" = "s390x" ]; then
-        #minikube addons enable registry --images="Registry=${MINIKUBE_REGISTRY_IMAGE},KubeRegistryProxy=gcr.io/k8s-minikube/kube-registry-proxy:0.0.9"
-		minikube addons enable registry --images="Registry=${MINIKUBE_REGISTRY_IMAGE}"
+        minikube addons enable registry --images="Registry=${MINIKUBE_REGISTRY_IMAGE},KubeRegistryProxy=gcr.io/k8s-minikube/kube-registry-proxy:0.0.9"
+		#minikube addons enable registry --images="Registry=${MINIKUBE_REGISTRY_IMAGE}"
     elif [[ "$ARCH" = "ppc64le" ]]; then
         git clone -b v1.9.11 --depth 1 https://github.com/kubernetes/kubernetes.git
         sed -i 's/:1.11/:1.22.1/' kubernetes/cluster/addons/registry/images/Dockerfile
