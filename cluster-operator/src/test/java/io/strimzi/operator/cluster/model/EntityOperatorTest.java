@@ -27,6 +27,7 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyIngressRule;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyPeer;
+import io.fabric8.kubernetes.api.model.policy.v1.PodDisruptionBudget;
 import io.fabric8.kubernetes.api.model.rbac.PolicyRule;
 import io.fabric8.kubernetes.api.model.rbac.PolicyRuleBuilder;
 import io.fabric8.kubernetes.api.model.rbac.Role;
@@ -46,9 +47,8 @@ import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.test.TestUtils;
-import io.strimzi.test.annotations.ParallelSuite;
-import io.strimzi.test.annotations.ParallelTest;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -72,7 +72,6 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasProperty;
 
 @SuppressWarnings({"checkstyle:ClassDataAbstractionCoupling", "checkstyle:ClassFanOutComplexity"})
-@ParallelSuite
 public class EntityOperatorTest {
     private static final KafkaVersion.Lookup VERSIONS = KafkaVersionTestUtils.getKafkaVersionLookup();
     private static final SharedEnvironmentProvider SHARED_ENV_PROVIDER = new MockSharedEnvironmentProvider();
@@ -102,6 +101,8 @@ public class EntityOperatorTest {
                     .withNewPod()
                         .withTmpDirSizeLimit("100Mi")
                     .endPod()
+                    .withNewPodDisruptionBudget()
+                    .endPodDisruptionBudget()
                 .endTemplate()
             .endEntityOperator()
             .endSpec()
@@ -141,13 +142,13 @@ public class EntityOperatorTest {
         }
     }
 
-    @ParallelTest
+    @Test
     public void testFromCrd() {
         assertThat(ENTITY_OPERATOR.namespace, is(NAMESPACE));
         assertThat(ENTITY_OPERATOR.cluster, is(CLUSTER_NAME));
     }
 
-    @ParallelTest
+    @Test
     public void testFromCrdNoTopicAndUserOperatorInEntityOperator() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -161,7 +162,7 @@ public class EntityOperatorTest {
         assertThat(entityOperator, is(nullValue()));
     }
 
-    @ParallelTest
+    @Test
     public void testFromCrdNoTopicInEntityOperator() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -178,7 +179,7 @@ public class EntityOperatorTest {
         assertThat(entityOperator.userOperator(), is(notNullValue()));
     }
 
-    @ParallelTest
+    @Test
     public void testFromCrdNoUserOperatorInEntityOperator() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -195,14 +196,14 @@ public class EntityOperatorTest {
         assertThat(entityOperator.userOperator(), is(nullValue()));
     }
 
-    @ParallelTest
+    @Test
     public void withAffinityAndTolerations() throws IOException {
         ResourceTester<Kafka, EntityOperator> helper = new ResourceTester<>(Kafka.class, VERSIONS, (kAssembly, versions) -> EntityOperator.fromCrd(new Reconciliation("test", KAFKA.getKind(), KAFKA.getMetadata().getNamespace(), KAFKA.getMetadata().getName()), kAssembly, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig()), this.getClass().getSimpleName() + ".withAffinityAndTolerations");
         helper.assertDesiredModel("-DeploymentAffinity.yaml", zc -> zc.generateDeployment(Map.of(), true, null, null).getSpec().getTemplate().getSpec().getAffinity());
         helper.assertDesiredModel("-DeploymentTolerations.yaml", zc -> zc.generateDeployment(Map.of(), true, null, null).getSpec().getTemplate().getSpec().getTolerations());
     }
 
-    @ParallelTest
+    @Test
     public void testTemplate() {
         Map<String, String> depLabels = Map.of("l1", "v1", "l2", "v2",
                 Labels.KUBERNETES_PART_OF_LABEL, "custom-part",
@@ -219,6 +220,10 @@ public class EntityOperatorTest {
 
         Map<String, String> rLabels = Map.of("l7", "v7", "l8", "v8");
         Map<String, String> rAnnotations = Map.of("a7", "v7", "a8", "v8");
+
+
+        Map<String, String> pdbLabels = Map.of("l9", "v9", "l10", "v10");
+        Map<String, String> pdbAnnotations = Map.of("a9", "a9", "a10", "10");
 
         Toleration toleration = new TolerationBuilder()
                 .withEffect("NoSchedule")
@@ -294,6 +299,12 @@ public class EntityOperatorTest {
                                     .withAnnotations(saAnnotations)
                                 .endMetadata()
                             .endServiceAccount()
+                            .withNewPodDisruptionBudget()
+                                .withNewMetadata()
+                                    .withLabels(pdbLabels)
+                                    .withAnnotations(pdbAnnotations)
+                                .endMetadata()
+                            .endPodDisruptionBudget()
                         .endTemplate()
                     .endEntityOperator()
                 .endSpec()
@@ -327,9 +338,15 @@ public class EntityOperatorTest {
         ServiceAccount sa = entityOperator.generateServiceAccount();
         assertThat(sa.getMetadata().getLabels().entrySet().containsAll(saLabels.entrySet()), is(true));
         assertThat(sa.getMetadata().getAnnotations().entrySet().containsAll(saAnnotations.entrySet()), is(true));
+
+        // Check Pod Disruption Budget
+        PodDisruptionBudget pdb = entityOperator.generatePodDisruptionBudget();
+        assertThat(pdb.getMetadata().getLabels().entrySet().containsAll(pdbLabels.entrySet()), is(true));
+        assertThat(pdb.getMetadata().getAnnotations().entrySet().containsAll(pdbAnnotations.entrySet()), is(true));
+        assertThat(pdb.getSpec().getMinAvailable(), is(new IntOrString(0)));
     }
 
-    @ParallelTest
+    @Test
     public void testGracePeriod() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -349,13 +366,13 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds(), is(123L));
     }
 
-    @ParallelTest
+    @Test
     public void testDefaultGracePeriod() {
         Deployment dep = ENTITY_OPERATOR.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds(), is(30L));
     }
 
-    @ParallelTest
+    @Test
     public void testImagePullSecrets() {
         LocalObjectReference secret1 = new LocalObjectReference("some-pull-secret");
         LocalObjectReference secret2 = new LocalObjectReference("some-other-pull-secret");
@@ -380,7 +397,7 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret2), is(true));
     }
 
-    @ParallelTest
+    @Test
     public void testImagePullSecretsFromCo() {
         LocalObjectReference secret1 = new LocalObjectReference("some-pull-secret");
         LocalObjectReference secret2 = new LocalObjectReference("some-other-pull-secret");
@@ -395,7 +412,7 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret2), is(true));
     }
 
-    @ParallelTest
+    @Test
     public void testImagePullSecretsFromBoth() {
         LocalObjectReference secret1 = new LocalObjectReference("some-pull-secret");
         LocalObjectReference secret2 = new LocalObjectReference("some-other-pull-secret");
@@ -420,13 +437,13 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret2), is(true));
     }
 
-    @ParallelTest
+    @Test
     public void testDefaultImagePullSecrets() {
         Deployment dep = ENTITY_OPERATOR.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets(), is(nullValue()));
     }
 
-    @ParallelTest
+    @Test
     public void testSecurityContext() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -449,13 +466,13 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext().getRunAsUser(), is(789L));
     }
 
-    @ParallelTest
+    @Test
     public void testDefaultSecurityContext() {
         Deployment dep = ENTITY_OPERATOR.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext(), is(nullValue()));
     }
 
-    @ParallelTest
+    @Test
     public void testImagePullPolicy() {
         Deployment dep = ENTITY_OPERATOR.generateDeployment(Map.of(), true, ImagePullPolicy.ALWAYS, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImagePullPolicy(), is(ImagePullPolicy.ALWAYS.toString()));
@@ -466,7 +483,7 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(1).getImagePullPolicy(), is(ImagePullPolicy.IFNOTPRESENT.toString()));
     }
 
-    @ParallelTest
+    @Test
     public void testTopicOperatorContainerEnvVars() {
         ContainerEnvVar envVar1 = new ContainerEnvVar();
         String testEnvOneKey = "TEST_ENV_1";
@@ -507,7 +524,7 @@ public class EntityOperatorTest {
                         .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvTwoValue), is(true));
     }
 
-    @ParallelTest
+    @Test
     public void testTopicOperatorContainerEnvVarsConflict() {
         ContainerEnvVar envVar1 = new ContainerEnvVar();
         String testEnvOneKey = EntityTopicOperator.ENV_VAR_RESOURCE_LABELS;
@@ -547,7 +564,7 @@ public class EntityOperatorTest {
                         .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvTwoValue), is(false));
     }
 
-    @ParallelTest
+    @Test
     public void testUserOperatorContainerEnvVars() {
         ContainerEnvVar envVar1 = new ContainerEnvVar();
         String testEnvOneKey = "TEST_ENV_1";
@@ -588,7 +605,7 @@ public class EntityOperatorTest {
                         .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvTwoValue), is(true));
     }
 
-    @ParallelTest
+    @Test
     public void testUserOperatorContainerEnvVarsConflict() {
         ContainerEnvVar envVar = new ContainerEnvVar();
         String testEnvTwoKey = EntityUserOperator.ENV_VAR_KAFKA_BOOTSTRAP_SERVERS;
@@ -619,7 +636,7 @@ public class EntityOperatorTest {
                         .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvTwoValue), is(false));
     }
 
-    @ParallelTest
+    @Test
     public void testUserOperatorContainerSecurityContext() {
         SecurityContext securityContext = new SecurityContextBuilder()
                 .withPrivileged(false)
@@ -653,7 +670,7 @@ public class EntityOperatorTest {
                 )));
     }
 
-    @ParallelTest
+    @Test
     public void testTopicOperatorContainerSecurityContext() {
         SecurityContext securityContext = new SecurityContextBuilder()
                 .withPrivileged(false)
@@ -687,7 +704,7 @@ public class EntityOperatorTest {
                 )));
     }
     
-    @ParallelTest
+    @Test
     public void testRole() {
         Role role = ENTITY_OPERATOR.generateRole(NAMESPACE, NAMESPACE);
 
@@ -718,7 +735,7 @@ public class EntityOperatorTest {
         assertThat(role.getRules(), is(rules));
     }
 
-    @ParallelTest
+    @Test
     public void testRoleInDifferentNamespace() {
         Role role = ENTITY_OPERATOR.generateRole(NAMESPACE, NAMESPACE);
         TestUtils.checkOwnerReference(role, KAFKA);
@@ -727,7 +744,7 @@ public class EntityOperatorTest {
         assertThat(role.getMetadata().getOwnerReferences().size(), is(0));
     }
 
-    @ParallelTest
+    @Test
     public void testTopicOperatorNetworkPolicy() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -750,7 +767,7 @@ public class EntityOperatorTest {
 
     }
 
-    @ParallelTest
+    @Test
     public void testUserOperatorNetworkPolicy() {
         Kafka resource = new KafkaBuilder(KAFKA)
                 .editSpec()
@@ -772,7 +789,7 @@ public class EntityOperatorTest {
         assertThat(rules.size(), is(0));
     }
 
-    @ParallelTest
+    @Test
     public void testUserOperatorAndTopicOperatorNetworkPolicy() {
         NetworkPolicy np = ENTITY_OPERATOR.generateNetworkPolicy();
         assertThat(np.getSpec().getIngress().size(), is(2));
@@ -780,17 +797,17 @@ public class EntityOperatorTest {
         assertThat(np.getSpec().getIngress().get(1).getPorts().get(0).getPort(), is(new IntOrString(EntityUserOperator.HEALTHCHECK_PORT)));
     }
 
-    @ParallelTest
+    @Test
     public void testFeatureGateEnvVars() {
         ClusterOperatorConfig config = new ClusterOperatorConfig.ClusterOperatorConfigBuilder(ResourceUtils.dummyClusterOperatorConfig(), VERSIONS)
-                .with(ClusterOperatorConfig.FEATURE_GATES.key(), "+DummyFeatureGate")
+                .with(ClusterOperatorConfig.FEATURE_GATES.key(), "+ServerSideApplyPhase1")
                 .build();
 
         EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", KAFKA.getKind(), KAFKA.getMetadata().getNamespace(), KAFKA.getMetadata().getName()), KAFKA, SHARED_ENV_PROVIDER, config);
         Deployment dep = eo.generateDeployment(Map.of(), false, null, null);
 
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getEnv().stream().filter(env -> "STRIMZI_FEATURE_GATES".equals(env.getName())).map(EnvVar::getValue).findFirst().orElseThrow(), is("+DummyFeatureGate"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(1).getEnv().stream().filter(env -> "STRIMZI_FEATURE_GATES".equals(env.getName())).map(EnvVar::getValue).findFirst().orElseThrow(), is("+DummyFeatureGate"));
+        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getEnv().stream().filter(env -> "STRIMZI_FEATURE_GATES".equals(env.getName())).map(EnvVar::getValue).findFirst().orElseThrow(), is("+ServerSideApplyPhase1"));
+        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(1).getEnv().stream().filter(env -> "STRIMZI_FEATURE_GATES".equals(env.getName())).map(EnvVar::getValue).findFirst().orElseThrow(), is("+ServerSideApplyPhase1"));
     }
 
     ////////////////////

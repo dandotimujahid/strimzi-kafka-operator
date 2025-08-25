@@ -5,8 +5,7 @@
 package io.strimzi.operator.common.featuregates;
 
 import io.strimzi.operator.common.InvalidConfigurationException;
-import io.strimzi.test.annotations.ParallelSuite;
-import io.strimzi.test.annotations.ParallelTest;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,9 +16,8 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@ParallelSuite
 public class FeatureGatesTest {
-    @ParallelTest
+    @Test
     public void testIndividualFeatureGates() {
         for (FeatureGates.FeatureGate gate : FeatureGates.NONE.allFeatureGates()) {
             FeatureGates enabled = new FeatureGates("+" + gate.getName());
@@ -30,7 +28,7 @@ public class FeatureGatesTest {
         }
     }
 
-    @ParallelTest
+    @Test
     public void testAllFeatureGates() {
         List<String> allEnabled = new ArrayList<>();
         List<String> allDisabled = new ArrayList<>();
@@ -51,11 +49,11 @@ public class FeatureGatesTest {
         }
     }
 
-    @ParallelTest
+    @Test
     public void testFeatureGatesParsing() {
-        assertThat(new FeatureGates("+DummyFeatureGate").dummyFeatureGateEnabled(), is(true));
-        assertThat(new FeatureGates("-DummyFeatureGate").dummyFeatureGateEnabled(), is(false));
-        assertThat(new FeatureGates("   -DummyFeatureGate   ").dummyFeatureGateEnabled(), is(false));
+        assertThat(new FeatureGates("+ServerSideApplyPhase1").serverSideApplyPhase1Enabled(), is(true));
+        assertThat(new FeatureGates("-ServerSideApplyPhase1").serverSideApplyPhase1Enabled(), is(false));
+        assertThat(new FeatureGates("   -ServerSideApplyPhase1   ").serverSideApplyPhase1Enabled(), is(false));
         // TODO: Add more tests with various feature gate combinations once we have multiple feature gates again.
         //       The commented out code below shows the tests we used to have with multiple feature gates.
         //assertThat(new FeatureGates("-UseKRaft,-DummyFeatureGate").useKRaftEnabled(), is(false));
@@ -66,15 +64,15 @@ public class FeatureGatesTest {
         //assertThat(new FeatureGates("+DummyFeatureGate,-UseKRaft").continueOnManualRUFailureEnabled(), is(true));
     }
 
-    @ParallelTest
+    @Test
     public void testFeatureGatesEquals() {
-        FeatureGates fg = new FeatureGates("+DummyFeatureGate");
+        FeatureGates fg = new FeatureGates("+ServerSideApplyPhase1");
         assertThat(fg, is(fg));
-        assertThat(fg, is(new FeatureGates("+DummyFeatureGate")));
-        assertThat(fg, is(not(new FeatureGates("-DummyFeatureGate"))));
+        assertThat(fg, is(new FeatureGates("+ServerSideApplyPhase1")));
+        assertThat(fg, is(not(new FeatureGates("-ServerSideApplyPhase1"))));
     }
 
-    @ParallelTest
+    @Test
     public void testEmptyFeatureGates() {
         List<FeatureGates> emptyFeatureGates = List.of(
                 new FeatureGates(null),
@@ -90,34 +88,34 @@ public class FeatureGatesTest {
         }
     }
 
-    @ParallelTest
+    @Test
     public void testDuplicateFeatureGateWithSameValue() {
-        InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("+DummyFeatureGate,+DummyFeatureGate"));
-        assertThat(e.getMessage(), containsString("Feature gate DummyFeatureGate is configured multiple times"));
+        InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("+ServerSideApplyPhase1,+ServerSideApplyPhase1"));
+        assertThat(e.getMessage(), containsString("Feature gate ServerSideApplyPhase1 is configured multiple times"));
     }
 
-    @ParallelTest
+    @Test
     public void testDuplicateFeatureGateWithDifferentValue() {
-        InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("+DummyFeatureGate,-DummyFeatureGate"));
-        assertThat(e.getMessage(), containsString("Feature gate DummyFeatureGate is configured multiple times"));
+        InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("+ServerSideApplyPhase1,-ServerSideApplyPhase1"));
+        assertThat(e.getMessage(), containsString("Feature gate ServerSideApplyPhase1 is configured multiple times"));
     }
 
-    @ParallelTest
+    @Test
     public void testMissingSign() {
-        InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("DummyFeatureGate"));
-        assertThat(e.getMessage(), containsString("DummyFeatureGate is not a valid feature gate configuration"));
+        InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("ServerSideApplyPhase1"));
+        assertThat(e.getMessage(), containsString("ServerSideApplyPhase1 is not a valid feature gate configuration"));
     }
 
-    @ParallelTest
+    @Test
     public void testNonExistingGate() {
         InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class, () -> new FeatureGates("+RandomGate"));
         assertThat(e.getMessage(), containsString("Unknown feature gate RandomGate found in the configuration"));
     }
 
-    @ParallelTest
+    @Test
     public void testEnvironmentVariable()   {
         assertThat(new FeatureGates("").toEnvironmentVariable(), is(""));
-        assertThat(new FeatureGates("+DummyFeatureGate").toEnvironmentVariable(), is("+DummyFeatureGate"));
-        assertThat(new FeatureGates("-DummyFeatureGate").toEnvironmentVariable(), is(""));
+        assertThat(new FeatureGates("+ServerSideApplyPhase1").toEnvironmentVariable(), is("+ServerSideApplyPhase1"));
+        assertThat(new FeatureGates("-ServerSideApplyPhase1").toEnvironmentVariable(), is(""));
     }
 }

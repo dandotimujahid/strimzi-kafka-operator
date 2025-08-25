@@ -10,6 +10,7 @@ import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.kafka.config.model.Scope;
 import io.strimzi.operator.cluster.model.DnsNameGenerator;
 import io.strimzi.operator.cluster.model.KafkaCluster;
 import io.strimzi.operator.cluster.model.KafkaVersion;
@@ -23,7 +24,6 @@ import io.strimzi.operator.common.AdminClientProvider;
 import io.strimzi.operator.common.BackOff;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
-import io.strimzi.operator.common.Util;
 import io.strimzi.operator.common.auth.TlsPemIdentity;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.model.OrderedProperties;
@@ -303,7 +303,6 @@ public class KafkaRoller {
         final Promise<Void> promise;
         final BackOff backOff;
         RestartReasons restartReasons;
-        private long connectionErrorStart = 0L;
 
         boolean needsRestart;
         boolean needsReconfig;
@@ -317,20 +316,6 @@ public class KafkaRoller {
             promise = Promise.promise();
             backOff = backOffSupplier.get();
             backOff.delayMs();
-        }
-
-        public void clearConnectionError() {
-            connectionErrorStart = 0L;
-        }
-
-        long connectionError() {
-            return connectionErrorStart;
-        }
-
-        void noteConnectionError() {
-            if (connectionErrorStart == 0L) {
-                connectionErrorStart = System.currentTimeMillis();
-            }
         }
 
         @Override
@@ -690,7 +675,7 @@ public class KafkaRoller {
     /**
      * Returns a config of the given broker.
      * @param nodeRef The reference of the broker.
-     * @return a Future which completes with the config of the given broker.
+     * @return the config of the given broker.
      */
     /* test */ Config brokerConfig(NodeRef nodeRef) throws ForceableProblem, InterruptedException {
         ConfigResource resource = new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(nodeRef.nodeId()));
@@ -703,10 +688,10 @@ public class KafkaRoller {
     /**
      * Returns logging of the given broker.
      * @param brokerId The id of the broker.
-     * @return a Future which completes with the logging of the given broker.
+     * @return the logging config of the given broker.
      */
     /* test */ Config brokerLogging(int brokerId) throws ForceableProblem, InterruptedException {
-        ConfigResource resource = Util.getBrokersLogging(brokerId);
+        ConfigResource resource = getBrokersLogging(brokerId);
         return await(VertxUtil.kafkaFutureToVertxFuture(reconciliation, vertx, brokerAdminClient.describeConfigs(singletonList(resource)).values().get(resource)),
                 30, TimeUnit.SECONDS,
             error -> new ForceableProblem("Error getting broker logging", error)
@@ -716,27 +701,38 @@ public class KafkaRoller {
     /* test */ void dynamicUpdateBrokerConfig(NodeRef nodeRef, Admin ac, KafkaBrokerConfigurationDiff configurationDiff, KafkaBrokerLoggingConfigurationDiff logDiff)
             throws ForceableProblem, InterruptedException {
         boolean isLog4j2 = KafkaVersion.compareDottedVersions(kafkaVersion.version(), "4.0.0") >= 0;
-        Map<ConfigResource, Collection<AlterConfigOp>> updatedConfig = new HashMap<>(2);
+        Map<ConfigResource, Collection<AlterConfigOp>> updatedPerBrokerConfig = new HashMap<>(2);
+        Map<ConfigResource, Collection<AlterConfigOp>> updatedClusterWideConfig = new HashMap<>(1);
         var podId = nodeRef.nodeId();
-        updatedConfig.put(Util.getBrokersConfig(podId), configurationDiff.getConfigDiff());
+        updatedPerBrokerConfig.put(getBrokersConfig(podId), configurationDiff.getConfigDiff(Scope.PER_BROKER));
+        updatedClusterWideConfig.put(getClusterWideConfig(), configurationDiff.getConfigDiff(Scope.CLUSTER_WIDE));
 
         if (!isLog4j2) {
-            updatedConfig.put(Util.getBrokersLogging(podId), logDiff.getLoggingDiff());
+            updatedPerBrokerConfig.put(getBrokersLogging(podId), logDiff.getLoggingDiff());
         }
 
+        LOGGER.traceCr(reconciliation, "Updating cluster wide configuration with {}", updatedClusterWideConfig);
         LOGGER.debugCr(reconciliation, "Updating broker configuration {}", nodeRef);
-        LOGGER.traceCr(reconciliation, "Updating broker configuration {} with {}", nodeRef, updatedConfig);
+        LOGGER.traceCr(reconciliation, "Updating broker configuration {} with {}", nodeRef, updatedPerBrokerConfig);
 
-        AlterConfigsResult alterConfigResult = ac.incrementalAlterConfigs(updatedConfig);
-        KafkaFuture<Void> brokerConfigFuture = alterConfigResult.values().get(Util.getBrokersConfig(podId));
+        AlterConfigsResult alterClusterConfigResult = ac.incrementalAlterConfigs(updatedClusterWideConfig);
+        KafkaFuture<Void> clusterConfigFuture = alterClusterConfigResult.values().get(getClusterWideConfig());
+
+        AlterConfigsResult alterBrokerConfigResult = ac.incrementalAlterConfigs(updatedPerBrokerConfig);
+        KafkaFuture<Void> brokerConfigFuture = alterBrokerConfigResult.values().get(getBrokersConfig(podId));
 
         KafkaFuture<Void> brokerLoggingConfigFuture;
         if (!isLog4j2) {
-            brokerLoggingConfigFuture = alterConfigResult.values().get(Util.getBrokersLogging(podId));
+            brokerLoggingConfigFuture = alterBrokerConfigResult.values().get(getBrokersLogging(podId));
         } else {
             brokerLoggingConfigFuture = KafkaFuture.completedFuture(null);
         }
 
+        await(VertxUtil.kafkaFutureToVertxFuture(reconciliation, vertx, clusterConfigFuture), 30, TimeUnit.SECONDS,
+                error -> {
+                    LOGGER.errorCr(reconciliation, "Error updating cluster-wide configuration", error);
+                    return new ForceableProblem("Error updating cluster-wide configuration", error);
+                });
         await(VertxUtil.kafkaFutureToVertxFuture(reconciliation, vertx, brokerConfigFuture), 30, TimeUnit.SECONDS,
             error -> {
                 LOGGER.errorCr(reconciliation, "Error updating broker configuration for pod {}", nodeRef, error);
@@ -982,6 +978,37 @@ public class KafkaRoller {
                 LOGGER.warnCr(reconciliation, "Error waiting for pod {}/{} to become ready: {}", namespace, podName, error);
                 return Future.failedFuture(error);
             });
+    }
+
+    /**
+     * Created config resource instance
+     *
+     * @param podId Pod ID
+     *
+     * @return  Config resource
+     */
+    private static ConfigResource getBrokersConfig(int podId) {
+        return new ConfigResource(ConfigResource.Type.BROKER, Integer.toString(podId));
+    }
+
+    /**
+     * Created config resource instance for cluster-wide dynamic changes
+     *
+     * @return  Config resource
+     */
+    private static ConfigResource getClusterWideConfig() {
+        return new ConfigResource(ConfigResource.Type.BROKER, "");
+    }
+
+    /**
+     * Created config resource instance
+     *
+     * @param podId Pod ID
+     *
+     * @return  Config resource
+     */
+    private static ConfigResource getBrokersLogging(int podId) {
+        return new ConfigResource(ConfigResource.Type.BROKER_LOGGER, Integer.toString(podId));
     }
 }
 
